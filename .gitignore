@@ -1,0 +1,13 @@
+# Visual Studion code
+.vscode/
+
+# Virtual Environment
+venv/
+
+# Python Caches
+__pycache__/
+
+# Local and Temporary Files
+**/local/
+#**/temp.*
+#**/test.*

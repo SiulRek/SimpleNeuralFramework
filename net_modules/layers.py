@@ -172,8 +172,9 @@ class Conv2D(Layer):
                 df_dout[:, :, i] += np.sum(imgs_region*region_error, axis=(2,3))
             db_dout[i] = np.sum(output_error[:,:,i,:])
 
-        self.filters -= learning_rate * df_dout
-        self.biases -= learning_rate * db_dout
+        batch_size = self.input_shape[3]
+        self.filters -= learning_rate * df_dout / batch_size
+        self.biases -= learning_rate * db_dout / batch_size
 
         return input_error
     

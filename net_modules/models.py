@@ -38,37 +38,47 @@ class Sequential:
         """
         self.loss = loss
 
-    def fit(self, X_train, y_train, epochs, learning_rate, verbose=1):
-        """ 
-        Train the model with the given data.
+    def fit(self, X_train, y_train, epochs, learning_rate, batch_size, verbose=1):
+        """
+        Train the model with the given data using mini-batch gradient descent.
 
         Args:
             X_train (numpy.ndarray): Input data.
             y_train (numpy.ndarray): True labels.
             epochs (int): Number of epochs.
             learning_rate (float): Learning rate.
-            verbose (int): Verbosity mode. 0 = silent, 1 = one line per epoch.
+            batch_size (int): Size of the mini-batch.
+            verbose (int): Verbosity mode. 0 = silent, 1 = one line per batch trained.
 
         Returns:
             None
         """
+        n_samples = X_train.shape[-1]
         for epoch in range(epochs):
-            loss = 0
-            output = X_train
-            for layer in self.layers:
-                output = layer.forward_propagation(output)
+            indices = np.arange(n_samples)
+            np.random.shuffle(indices)
+            X_train_shuffled = X_train[..., indices]
+            y_train_shuffled = y_train[..., indices]
 
-            loss += self.loss.calculate(y_train, output)
+            for start_idx in range(0, n_samples, batch_size):
+                end_idx = min(start_idx + batch_size, n_samples)
+                X_batch = X_train_shuffled[..., start_idx:end_idx]
+                y_batch = y_train_shuffled[..., start_idx:end_idx]
 
-            output_error = self.loss.calculate_prime(y_train, output)
-            for layer in reversed(self.layers):
-                output_error = layer.backward_propagation(output_error, learning_rate)
+                output = X_batch
+                for layer in self.layers:
+                    output = layer.forward_propagation(output)
 
-            loss /= len(X_train)
+                loss = self.loss.calculate(y_batch, output) / len(X_batch)
 
-            if verbose:
-                print(f'Epoch {epoch+1}/{epochs}, Error: {loss}')
-            
+                output_error = self.loss.calculate_prime(y_batch, output)
+                for layer in reversed(self.layers):
+                    output_error = layer.backward_propagation(output_error, learning_rate)
+
+                if verbose:
+                    print(f'Epoch {epoch+1}/{epochs}, Batch {start_idx//batch_size+1}/{n_samples//batch_size}, Error: {loss}')
+
+              
     def predict(self, X):
         """ 
         Predict the output of the model.

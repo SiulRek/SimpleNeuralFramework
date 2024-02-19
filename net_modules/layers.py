@@ -200,18 +200,40 @@ class Flatten(Layer):
             input_error[..., i] = sample.reshape(self.input_shape[:-1])
         return input_error
 
-# class MaxPooling2D(Layer):
-#     def __init__(self, pool_size):
-#         self.pool_size = pool_size
-#         self.p_x = pool_size[0]
-#         self.p_y = pool_size[1]
-        
-#     def iterate_pools(self, data):
-#         for x, y in itertools.product(range(start=0, stop=data.shape[0], step=self.p_x), range(range(start=0, stop=data.shape[1], step=self.p_y))):
-#             yield data[x:x+self.p_x, y:y+self.p_y, :, :], x, y 
+class MaxPooling2D(Layer):
+    def __init__(self, pool_size):
+        self.pool_size = pool_size
     
-#     def frow
-
+    def iterate_pools(self, input_data, x_len, y_len):
+        x_range = range(0, x_len - self.pool_size[0] + 1, self.pool_size[0])
+        y_range = range(0, y_len - self.pool_size[1] + 1, self.pool_size[1])
+        feature_size = input_data.shape[2]
+        batch_size = input_data.shape[3]
+        reshape_size = (np.prod(self.pool_size), feature_size, batch_size)
+        for x, y in itertools.product(x_range, y_range):
+            x_pool = x // self.pool_size[0]
+            y_pool = y // self.pool_size[1]
+            pool = input_data[x:x+self.pool_size[0], y:y+self.pool_size[1], :, :]
+            pool_copy = np.copy(pool)
+            pool_reshaped = np.reshape(pool_copy, reshape_size)
+            yield pool_reshaped, x_pool, y_pool
+    
+    def forward_propagation(self, input_data):
+        self.input = input_data
+        self.output = np.zeros((input_data.shape[0]//self.pool_size[0], input_data.shape[1]//self.pool_size[1], input_data.shape[2], input_data.shape[3]))
+        for pool_reshaped, x, y in self.iterate_pools(input_data, *input_data.shape[:2]):
+            self.output[x, y, :, :] = np.max(pool_reshaped, axis=0)
+        return self.output
+    
+    def backward_propagation(self, output_error, learning_rate):
+        prod_dim_1_2 = self.input.shape[0] * self.input.shape[1]
+        input_error = np.zeros((prod_dim_1_2, *self.input.shape[2:]))
+        for pool_reshaped, x, y in self.iterate_pools(self.input, *self.input.shape[:2]):
+            args_max = np.argmax(pool_reshaped, axis=0)
+            for i in range(self.output.shape[2]):
+                for j in range(self.output.shape[3]):
+                    input_error[args_max[i, j], i, j] = output_error[x, y, i, j]
+        return input_error.reshape(self.input.shape)
                     
 
 

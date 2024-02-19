@@ -1,26 +1,27 @@
 import itertools
 import numpy as np
 from net_modules.layer_base import Layer
+from net_modules.initializer import Initializer
 
 
 class Dense(Layer):
     """ 
     Fully connected layer.
     """
-    def __init__(self, input_shape, output_shape):
+    def __init__(self, input_shape, output_shape, initialization='xavier_uniform'):
         """ 
         Initialize the layer initializing weights and biases.
 
         Args:
             input_shape (int): Input shape.
             output_shape (int): Output shape.
+            initialization (str): Initialization method. Default is 'xavier'.
         """
 
-        # Xavier/Glorot Initialization
         fan_in, fan_out = input_shape, output_shape
-        limit = np.sqrt(6 / (fan_in + fan_out))
-        self.weights = np.random.uniform(-limit, limit, (fan_out, fan_in))
-        self.bias = np.random.uniform(-limit, limit, (fan_out, 1))
+        init_func = Initializer.get_init_function(initialization)
+        self.weights = init_func((fan_out, fan_in), fan_in, fan_out)
+        self.bias = init_func((fan_out, 1), fan_in, fan_out)
 
     def forward_propagation(self, input_data):
         self.input = input_data
@@ -120,7 +121,7 @@ class Conv2D(Layer):
     """ 
     2D convolutional layer.
     """
-    def __init__(self, input_shape, kernel_size, number_filters):
+    def __init__(self, input_shape, kernel_size, number_filters, initialization='xavier_uniform'):
         """ 
         Initialize the layer initializing weights and biases.
 
@@ -128,29 +129,26 @@ class Conv2D(Layer):
             input_shape (tuple): Input shape. Dimensions are (height, width, channels).
             kernel_size (tuple): Kernel size. Dimensions are (height, width).
             number_filters (int): Number of filters.
+            initialization (str): Initialization method. Default is 'xavier'.
         """
         self.input_shape =  input_shape
         self.number_filters = number_filters
         self.kernel_size = kernel_size
         self.k_x = self.kernel_size[0]
         self.k_y = self.kernel_size[1]
-        self.img_out_size = (self.input_shape[0] - self.kernel_size[0] + 1, self.input_shape[1] - self.kernel_size[1] + 1)
+        self.img_out_size = (self.input_shape[0] - self.k_x + 1, self.input_shape[1] - self.k_y + 1)
 
-
-        # Xavier Initialization
-        self.fan_in = np.prod(self.kernel_size) * self.input_shape[2]  # product of kernel dimensions * number of input channels
-        self.fan_out = np.prod(self.kernel_size) * self.number_filters  # product of kernel dimensions * number of filters
-        std_dev = np.sqrt(2 / (self.fan_in + self.fan_out))
-        self.filters = np.random.normal(0, std_dev, (self.k_x, self.k_y, self.number_filters))
-        self.biases = np.zeros(self.number_filters)
+        self.fan_in = np.prod(self.kernel_size) * self.input_shape[2] 
+        self.fan_out = np.prod(self.kernel_size) * self.number_filters  
+        init_func = Initializer.get_init_function(initialization)
+        self.filters = init_func((self.k_x, self.k_y, self.number_filters), self.fan_in, self.fan_out)
+        self.biases = init_func((self.number_filters, 1), self.fan_in, self.fan_out)
       
     def iterate_regions(self, input_data, x_len, y_len):
         for x, y in itertools.product(range(x_len), range(y_len)):
             yield input_data[x:x+self.k_x, y:y+self.k_y, :, :], x, y 
 
     def forward_propagation(self, input_data):
-        # Input shape: (img_x, img_y, img_channels, batch_size) 
-        # Batch size of 1 is not allowed
         self.input = input_data
         self.output = np.zeros((self.img_out_size[0], self.img_out_size[1], self.number_filters, input_data.shape[3]))
         axis_except_batch_dim = tuple(range(input_data.ndim - 1))

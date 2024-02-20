@@ -1,5 +1,5 @@
 import numpy as np
-
+from net_modules.layers import Dropout
 
 class Sequential:
     """ 
@@ -67,6 +67,8 @@ class Sequential:
 
                 output = X_batch
                 for layer in self.layers:
+                    if isinstance(layer, Dropout):
+                        output = layer.forward_propagation(output, training=True)
                     output = layer.forward_propagation(output)
 
                 loss = self.loss.calculate(y_batch, output) / len(X_batch)

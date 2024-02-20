@@ -21,11 +21,11 @@ class Dense(Layer):
         fan_in, fan_out = input_shape, output_shape
         init_func = Initializer.get_init_function(initialization)
         self.weights = init_func((fan_out, fan_in), fan_in, fan_out)
-        self.bias = init_func((fan_out, 1), fan_in, fan_out)
+        self.biases = init_func((fan_out, 1), fan_in, fan_out)
 
     def forward_propagation(self, input_data):
         self.input = input_data
-        self.output = np.dot(self.weights, self.input) + self.bias
+        self.output = np.dot(self.weights, self.input) + self.biases
         return self.output
 
     def backward_propagation(self, output_error, learning_rate):
@@ -34,7 +34,7 @@ class Dense(Layer):
         weights_error = np.dot(output_error, self.input.T)
 
         self.weights -= learning_rate * weights_error / batch_size
-        self.bias -= learning_rate * np.sum(output_error, axis=1, keepdims=True) / batch_size
+        self.biases -= learning_rate * np.sum(output_error, axis=1, keepdims=True) / batch_size
         return input_error
 
 
@@ -172,7 +172,7 @@ class Conv2D(Layer):
                 df_dout[:, :, i] += np.sum(imgs_region*region_error, axis=(2,3))
             db_dout[i] = np.sum(output_error[:,:,i,:])
 
-        batch_size = self.input_shape[3]
+        batch_size = self.input.shape[3]
         self.filters -= learning_rate * df_dout / batch_size
         self.biases -= learning_rate * db_dout / batch_size
 
@@ -201,7 +201,16 @@ class Flatten(Layer):
         return input_error
 
 class MaxPooling2D(Layer):
+    """ 
+    2D max pooling layer.
+    """
     def __init__(self, pool_size):
+        """ 
+        Initialize the layer with the given pool size.
+
+        Args:
+            pool_size (tuple): Pool size. Dimensions are (height, width).
+        """
         self.pool_size = pool_size
     
     def iterate_pools(self, input_data, x_len, y_len):
@@ -236,5 +245,27 @@ class MaxPooling2D(Layer):
         return input_error.reshape(self.input.shape)
                     
 
+# class Dropout(Layer):
+#     """ 
+#     Dropout layer.
+#     """
+#     def __init__(self, rate):
+#         """ Initialize the layer with the given dropout rate. """
+#         self.rate = rate
+#         self.mask = None
+
+#     def forward_propagation(self, input_data, training=False):
+#         if training:
+#             single_sample_shape = input_data.shape[:-1]
+#             single_sample_mask = np.random.binomial(1, 1 - self.rate, size=single_sample_shape) / (1 - self.rate)
+
+#             self.mask = np.repeat(single_sample_mask[..., np.newaxis], input_data.shape[-1], axis=-1)
+#             self.output = input_data * self.mask
+#         else:
+#             self.output = input_data
+#         return self.output
+
+#     def backward_propagation(self, output_error, learning_rate):
+#         return output_error * self.mask
 
 

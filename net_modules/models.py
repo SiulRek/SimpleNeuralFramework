@@ -1,5 +1,6 @@
 import numpy as np
 from net_modules.layers import Dropout
+from net_modules.metrics import Metrics
 
 class Sequential:
     """ 
@@ -37,8 +38,30 @@ class Sequential:
             None
         """
         self.loss = loss
+    
+    def _calculate_metrics(self, y_true, output, metrics):
+        """
+        Calculate the specified metrics.
 
-    def fit(self, X_train, y_train, epochs, learning_rate, batch_size, verbose=1):
+        Args:
+            y_true (numpy.ndarray): True labels.
+            output (numpy.ndarray): Predicted output from the model.
+            metrics (list): List of metrics to be calculated.
+
+        Returns:
+            Tuple (dict, list): Dictionary with metric values and list with metric strings.
+        """
+        values = {}
+        text = []
+        for metric_name in metrics:
+            metric_function = Metrics.get_metric_function(metric_name)
+            if metric_function:
+                metric_value = metric_function(y_true, output)
+                values[metric_name] = metric_value
+                text.append(f'{metric_name}: {metric_value:.4f}')
+        return values, text
+
+    def fit(self, X_train, y_train, epochs, learning_rate, batch_size, verbose=1, metrics=None):
         """
         Train the model with the given data using mini-batch gradient descent.
 
@@ -48,7 +71,8 @@ class Sequential:
             epochs (int): Number of epochs.
             learning_rate (float): Learning rate.
             batch_size (int): Size of the mini-batch.
-            verbose (int): Verbosity mode. 0 = silent, 1 = one line per batch trained.
+            verbose (int): Verbosity mode. 0 = silent, 1 = one line per epoch trained, 2 = one line per batch trained.
+            metrics (list): List of metrics to be calculated. If None, only the loss is calculated.
 
         Returns:
             None
@@ -77,10 +101,19 @@ class Sequential:
                 for layer in reversed(self.layers):
                     output_error = layer.backward_propagation(output_error, learning_rate)
 
-                if verbose:
+                if verbose == 2:
                     print(f'Epoch {epoch+1}/{epochs}, Batch {start_idx//batch_size+1}/{n_samples//batch_size}, Error: {loss}')
+            
+            if verbose > 0:
+                y_preds = self.predict(X_train)
+                metrics_text = ''
+                if metrics is not None:
+                    _, text = self._calculate_metrics(y_train, y_preds, metrics)
+                    metrics_text = ', ' + ', '.join(text)
+                print('-' * 50)
+                print(f'Epoch {epoch+1}/{epochs}, Error: {self.loss.calculate(y_train, y_preds):.4f}' + metrics_text)
 
-              
+
     def predict(self, X):
         """ 
         Predict the output of the model.
@@ -95,7 +128,7 @@ class Sequential:
         for layer in self.layers:
             output = layer.forward_propagation(output)
         return output
-    
+
     def evaluate(self, X, y_true, metrics=None):
         """ 
         Evaluate the model with the given metrics.
@@ -106,33 +139,17 @@ class Sequential:
             metrics (list): List of metrics to be calculated. If None, only the loss is calculated.
         
         Returns:
-            Dictionary_true with the values of the metrics.
+            Dictionary with the values of the metrics.
         """
-        text = []
-        values = {}
-
         output = self.predict(X)
         loss = self.loss.calculate(y_true, output)
-        values['loss'] = loss
-        text.append(f'loss ({self.loss.name}): {loss:.4f}')
+        values = {'loss': loss}
+        text = [f'loss ({self.loss.name}): {loss:.4f}']
         
-        if metrics is None:
-            print(text[0])
-            return values
-        
-        for metric in metrics:
-            if metric == 'accuracy':
-                accuracy_true = np.mean(np.argmax(y_true, axis=0) == np.argmax(output, axis=0))
-                values['accuracy'] = accuracy_true
-                text.append(f'accuracy: {accuracy_true:.4f}')
-            elif metric == 'mse':
-                mse = np.mean(np.square(y_true - output))
-                values['mse'] = mse
-                text.append(f'mse: {mse:.4f}')
-            elif metric == 'mae':
-                mae = np.mean(np.abs(y_true - output))
-                values['mae'] = mae
-                text.append(f'mae: {mae:.4f}')
+        if metrics is not None:
+            metric_values, metric_text = self._calculate_metrics(y_true, output, metrics)
+            values.update(metric_values)
+            text.extend(metric_text)
 
         print(', '.join(text))
         return values

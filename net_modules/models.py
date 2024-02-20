@@ -71,7 +71,7 @@ class Sequential:
                         output = layer.forward_propagation(output, training=True)
                     output = layer.forward_propagation(output)
 
-                loss = self.loss.calculate(y_batch, output) / len(X_batch)
+                loss = self.loss.calculate(y_batch, output)
 
                 output_error = self.loss.calculate_prime(y_batch, output)
                 for layer in reversed(self.layers):
@@ -112,7 +112,7 @@ class Sequential:
         values = {}
 
         output = self.predict(X)
-        loss = self.loss.calculate(y_true, output) / len(X)
+        loss = self.loss.calculate(y_true, output)
         values['loss'] = loss
         text.append(f'loss ({self.loss.name}): {loss:.4f}')
         

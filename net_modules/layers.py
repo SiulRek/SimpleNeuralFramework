@@ -245,27 +245,27 @@ class MaxPooling2D(Layer):
         return input_error.reshape(self.input.shape)
                     
 
-# class Dropout(Layer):
-#     """ 
-#     Dropout layer.
-#     """
-#     def __init__(self, rate):
-#         """ Initialize the layer with the given dropout rate. """
-#         self.rate = rate
-#         self.mask = None
+class Dropout(Layer):
+    """ 
+    Dropout layer.
+    """
+    def __init__(self, rate):
+        """ Initialize the layer with the given dropout rate. """
+        self.rate = rate
+        self.mask = None
 
-#     def forward_propagation(self, input_data, training=False):
-#         if training:
-#             single_sample_shape = input_data.shape[:-1]
-#             single_sample_mask = np.random.binomial(1, 1 - self.rate, size=single_sample_shape) / (1 - self.rate)
+    def forward_propagation(self, input_data, training=False):
+        if training:
+            single_sample_shape = input_data.shape[:-1]
+            single_sample_mask = np.random.binomial(1, 1 - self.rate, size=single_sample_shape) / (1 - self.rate)
 
-#             self.mask = np.repeat(single_sample_mask[..., np.newaxis], input_data.shape[-1], axis=-1)
-#             self.output = input_data * self.mask
-#         else:
-#             self.output = input_data
-#         return self.output
+            self.mask = np.repeat(single_sample_mask[..., np.newaxis], input_data.shape[-1], axis=-1)
+            self.output = input_data * self.mask
+        else:
+            self.output = input_data
+        return self.output
 
-#     def backward_propagation(self, output_error, learning_rate):
-#         return output_error * self.mask
+    def backward_propagation(self, output_error, learning_rate):
+        return output_error * self.mask
 
 

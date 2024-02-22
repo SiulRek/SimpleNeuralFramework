@@ -61,7 +61,7 @@ class Sequential:
                 text.append(f'{metric_name}: {metric_value:.4f}')
         return values, text
 
-    def fit(self, X_train, y_train, epochs, learning_rate, batch_size, verbose=1, metrics=None):
+    def fit(self, X_train, y_train, epochs, default_lr, batch_size, verbose=1, metrics=None):
         """
         Train the model with the given data using mini-batch gradient descent.
 
@@ -69,7 +69,7 @@ class Sequential:
             X_train (numpy.ndarray): Input data.
             y_train (numpy.ndarray): True labels.
             epochs (int): Number of epochs.
-            learning_rate (float): Learning rate.
+            default_lr (float): Default learning rate.
             batch_size (int): Size of the mini-batch.
             verbose (int): Verbosity mode. 0 = silent, 1 = one line per epoch trained, 2 = one line per batch trained.
             metrics (list): List of metrics to be calculated. If None, only the loss is calculated.
@@ -99,7 +99,7 @@ class Sequential:
 
                 output_error = self.loss.calculate_prime(y_batch, output)
                 for layer in reversed(self.layers):
-                    output_error = layer.backward_propagation(output_error, learning_rate)
+                    output_error = layer.backward_propagation(output_error, default_lr)
 
                 if verbose == 2:
                     print(f'Epoch {epoch+1}/{epochs}, Batch {start_idx//batch_size+1}/{n_samples//batch_size}, Error: {loss}')

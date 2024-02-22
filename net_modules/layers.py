@@ -267,5 +267,94 @@ class Dropout(Layer):
 
     def backward_propagation(self, output_error, learning_rate):
         return output_error * self.mask
+    
+
+class BatchNormalization:
+    """ Batch normalization layer. """
+
+    def __init__(self, epsilon=1e-5, momentum=0.99, clip_value=1):
+        """ Initialize the layer with the given epsilon and momentum. 
+        
+        Args:
+            epsilon (float): Epsilon value.
+            momentum (float): Momentum value.
+            clip_value (float): Value to clip gradients.
+        """
+        self.epsilon = epsilon
+        self.momentum = momentum
+        self.clip_value = clip_value
+        self.running_mean = None
+        self.running_var = None
+        self.gamma = None
+        self.beta = None
+        self.input = None
+
+    def initialize_parameters(self, input_shape):
+        feature_dims = input_shape[:-1]  # Exclude the sample dimension
+        self.gamma = np.ones((*feature_dims, 1))
+        self.beta = np.zeros((*feature_dims, 1))
+        self.running_mean = np.zeros((*feature_dims, 1))
+        self.running_var = np.ones((*feature_dims, 1))
+
+    def forward_propagation(self, input_data, training=True):
+        self.input = input_data
+        if self.gamma is None or self.beta is None:
+            self.initialize_parameters(input_data.shape)
+
+        if training:
+            batch_mean = np.mean(input_data, axis=-1, keepdims=True)
+            batch_var = np.var(input_data, axis=-1, keepdims=True)
+
+            self.running_mean = self.momentum * self.running_mean + (1 - self.momentum) * batch_mean
+            self.running_var = self.momentum * self.running_var + (1 - self.momentum) * batch_var
+
+            normalized = (input_data - batch_mean) / np.sqrt(batch_var + self.epsilon)
+            output = self.gamma * normalized + self.beta
+            return output
+        else:
+            normalized = (input_data - self.running_mean) / np.sqrt(self.running_var + self.epsilon)
+            return self.gamma * normalized + self.beta
+
+    def backward_propagation(self, output_error, learning_rate):
+        def clip_gradients(grad, clip_value):
+            return np.clip(grad, -clip_value, clip_value)
+
+        batch_size = output_error.shape[-1]
+
+        normalized_input = (self.input - self.running_mean) / np.sqrt(self.running_var + self.epsilon)
+        grad_gamma = np.sum(output_error * normalized_input, axis=-1, keepdims=True) / batch_size
+        grad_beta = np.sum(output_error, axis=-1, keepdims=True) / batch_size
+
+        # Clip gradients for gamma and beta
+        grad_gamma = clip_gradients(grad_gamma, self.clip_value)
+        grad_beta = clip_gradients(grad_beta, self.clip_value)
+
+        self.gamma -= learning_rate * grad_gamma
+        self.beta -= learning_rate * grad_beta
+
+        grad_input_norm = output_error * self.gamma
+
+        # Calculation of grad_var
+        input_minus_mean = self.input - self.running_mean
+        var_adjusted = np.power(self.running_var + self.epsilon, -1.5)
+        grad_var_component = grad_input_norm * input_minus_mean * -0.5
+        grad_var = np.sum(grad_var_component * var_adjusted, axis=-1, keepdims=True) / batch_size
+
+        # Calculation of grad_mean
+        sqrt_var = np.sqrt(self.running_var + self.epsilon)
+        grad_mean_component = grad_input_norm * -1 / sqrt_var
+        grad_mean = np.sum(grad_mean_component, axis=-1, keepdims=True) / batch_size
+        mean_correction = grad_var * np.mean(-2 * input_minus_mean, axis=-1, keepdims=True)
+        grad_mean += mean_correction
+
+        # Calculate grad_input
+        grad_input = grad_input_norm / sqrt_var
+        grad_input += (2 * grad_var * input_minus_mean + grad_mean)
+
+        # Clip the input gradient
+        grad_input = clip_gradients(grad_input, self.clip_value)
+
+        return grad_input
+
 
 

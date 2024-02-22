@@ -1,14 +1,18 @@
+from copy import deepcopy
+
 import itertools
 import numpy as np
+
 from net_modules.layer_base import Layer
 from net_modules.initializer import Initializer
+from net_modules.optimizers import SGD
 
 
 class Dense(Layer):
     """ 
     Fully connected layer.
     """
-    def __init__(self, input_shape, output_shape, initialization='xavier_uniform'):
+    def __init__(self, input_shape, output_shape, initialization='xavier_uniform', optimizer=SGD()):
         """ 
         Initialize the layer initializing weights and biases.
 
@@ -16,27 +20,33 @@ class Dense(Layer):
             input_shape (int): Input shape.
             output_shape (int): Output shape.
             initialization (str): Initialization method. Default is 'xavier'.
+            optimizer (Optimizer): Optimizer (Instance of Optimizer) to use. Default is SGD.
         """
 
         fan_in, fan_out = input_shape, output_shape
         init_func = Initializer.get_init_function(initialization)
         self.weights = init_func((fan_out, fan_in), fan_in, fan_out)
         self.biases = init_func((fan_out, 1), fan_in, fan_out)
+        self.weights_optimizer = optimizer
+        self.biases_optimizer = deepcopy(optimizer)
 
     def forward_propagation(self, input_data):
         self.input = input_data
         self.output = np.dot(self.weights, self.input) + self.biases
         return self.output
 
-    def backward_propagation(self, output_error, learning_rate):
+    def backward_propagation(self, output_error, default_lr):
+        if self.weights_optimizer.learning_rate == None:
+            self.weights_optimizer.learning_rate = default_lr
+            self.biases_optimizer.learning_rate = default_lr
         batch_size = output_error.shape[1]
         input_error = np.dot(self.weights.T, output_error)
-        weights_error = np.dot(output_error, self.input.T)
+        weights_error = np.dot(output_error, self.input.T)  / batch_size
+        biases_error = np.sum(output_error, axis=1, keepdims=True) / batch_size
 
-        self.weights -= learning_rate * weights_error / batch_size
-        self.biases -= learning_rate * np.sum(output_error, axis=1, keepdims=True) / batch_size
+        self.weights = self.weights_optimizer.update(self.weights, weights_error) 
+        self.biases = self.biases_optimizer.update(self.biases, biases_error)
         return input_error
-
 
 class ReLU(Layer):
     """ 
@@ -47,7 +57,7 @@ class ReLU(Layer):
         self.output = np.maximum(0, self.input)
         return self.output
 
-    def backward_propagation(self, output_error, learning_rate):
+    def backward_propagation(self, output_error, default_lr):
         return output_error * (self.output > 0)
     
     
@@ -69,7 +79,7 @@ class ELU(Layer):
         self.output = np.where(self.input > 0, self.input, self.alpha * (np.exp(self.input) - 1))
         return self.output
 
-    def backward_propagation(self, output_error, learning_rate):
+    def backward_propagation(self, output_error, default_lr):
         return output_error * np.where(self.input > 0, 1, self.alpha * np.exp(self.input))
 
 
@@ -95,7 +105,7 @@ class Softmax(Layer):
         self.output = self.softmax(self.input)
         return self.output
 
-    def backward_propagation(self, output_error, learning_rate):
+    def backward_propagation(self, output_error, default_lr):
         if not self.cross_entropy_loss:
             return self.output * (output_error - np.sum(output_error * self.output, axis=0, keepdims=True))
         return output_error
@@ -113,7 +123,7 @@ class Sigmoid(Layer):
         self.output = self.sigmoid(self.input)
         return self.output
 
-    def backward_propagation(self, output_error, learning_rate):
+    def backward_propagation(self, output_error, default_lr):
         return output_error * self.output * (1 - self.output)
 
 
@@ -159,7 +169,7 @@ class Conv2D(Layer):
             self.output[:, :, i, :] += self.biases[i]
         return self.output
 
-    def backward_propagation(self, output_error, learning_rate): 
+    def backward_propagation(self, output_error, default_lr): 
         input_error = np.zeros(self.input.shape)
         df_dout = np.zeros(self.filters.shape)
         db_dout = np.zeros(self.biases.shape)
@@ -173,8 +183,8 @@ class Conv2D(Layer):
             db_dout[i] = np.sum(output_error[:,:,i,:])
 
         batch_size = self.input.shape[3]
-        self.filters -= learning_rate * df_dout / batch_size
-        self.biases -= learning_rate * db_dout / batch_size
+        self.filters -= default_lr * df_dout / batch_size
+        self.biases -= default_lr * db_dout / batch_size
 
         return input_error
     
@@ -194,7 +204,7 @@ class Flatten(Layer):
             self.output[:, i] = sample.flatten()
         return self.output
         
-    def backward_propagation(self, output_error, learning_rate):
+    def backward_propagation(self, output_error, default_lr):
         input_error = np.zeros(self.input_shape)
         for i, sample in enumerate(self.iterate_samples(output_error)):
             input_error[..., i] = sample.reshape(self.input_shape[:-1])
@@ -234,7 +244,7 @@ class MaxPooling2D(Layer):
             self.output[x, y, :, :] = np.max(pool_reshaped, axis=0)
         return self.output
     
-    def backward_propagation(self, output_error, learning_rate):
+    def backward_propagation(self, output_error, default_lr):
         prod_dim_1_2 = self.input.shape[0] * self.input.shape[1]
         input_error = np.zeros((prod_dim_1_2, *self.input.shape[2:]))
         for pool_reshaped, x, y in self.iterate_pools(self.input, *self.input.shape[:2]):
@@ -265,7 +275,7 @@ class Dropout(Layer):
             self.output = input_data
         return self.output
 
-    def backward_propagation(self, output_error, learning_rate):
+    def backward_propagation(self, output_error, default_lr):
         return output_error * self.mask
     
 
@@ -315,7 +325,7 @@ class BatchNormalization:
             normalized = (input_data - self.running_mean) / np.sqrt(self.running_var + self.epsilon)
             return self.gamma * normalized + self.beta
 
-    def backward_propagation(self, output_error, learning_rate):
+    def backward_propagation(self, output_error, default_lr):
         def clip_gradients(grad, clip_value):
             return np.clip(grad, -clip_value, clip_value)
 
@@ -329,8 +339,8 @@ class BatchNormalization:
         grad_gamma = clip_gradients(grad_gamma, self.clip_value)
         grad_beta = clip_gradients(grad_beta, self.clip_value)
 
-        self.gamma -= learning_rate * grad_gamma
-        self.beta -= learning_rate * grad_beta
+        self.gamma -= default_lr * grad_gamma
+        self.beta -= default_lr * grad_beta
 
         grad_input_norm = output_error * self.gamma
 

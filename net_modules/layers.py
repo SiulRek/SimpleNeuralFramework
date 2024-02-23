@@ -27,7 +27,7 @@ class Dense(Layer):
         init_func = Initializer.get_init_function(initialization)
         self.weights = init_func((fan_out, fan_in), fan_in, fan_out)
         self.biases = init_func((fan_out, 1), fan_in, fan_out)
-        self.weights_optimizer = optimizer
+        self.weights_optimizer = deepcopy(optimizer)
         self.biases_optimizer = deepcopy(optimizer)
 
     def forward_propagation(self, input_data):
@@ -125,38 +125,41 @@ class Sigmoid(Layer):
 
     def backward_propagation(self, output_error, default_lr):
         return output_error * self.output * (1 - self.output)
-
+    
 
 class Conv2D(Layer):
     """ 
     2D convolutional layer.
     """
-    def __init__(self, input_shape, kernel_size, number_filters, initialization='xavier_uniform'):
+    def __init__(self, input_shape, kernel_size, number_filters, initialization='xavier_uniform', optimizer=SGD()):
         """ 
-        Initialize the layer initializing weights and biases.
+        Initialize the layer with the given input shape, kernel size, number of filters, initialization and optimizer.
 
         Args:
             input_shape (tuple): Input shape. Dimensions are (height, width, channels).
             kernel_size (tuple): Kernel size. Dimensions are (height, width).
             number_filters (int): Number of filters.
             initialization (str): Initialization method. Default is 'xavier'.
+            optimizer (Optimizer): Optimizer (Instance of Optimizer) to use. Default is SGD.
         """
-        self.input_shape =  input_shape
+        self.input_shape = input_shape
         self.number_filters = number_filters
         self.kernel_size = kernel_size
-        self.k_x = self.kernel_size[0]
-        self.k_y = self.kernel_size[1]
+        self.k_x, self.k_y = self.kernel_size
         self.img_out_size = (self.input_shape[0] - self.k_x + 1, self.input_shape[1] - self.k_y + 1)
 
-        self.fan_in = np.prod(self.kernel_size) * self.input_shape[2] 
-        self.fan_out = np.prod(self.kernel_size) * self.number_filters  
+        self.fan_in = np.prod(self.kernel_size) * self.input_shape[2]
+        self.fan_out = np.prod(self.kernel_size) * self.number_filters
         init_func = Initializer.get_init_function(initialization)
         self.filters = init_func((self.k_x, self.k_y, self.number_filters), self.fan_in, self.fan_out)
         self.biases = init_func((self.number_filters, 1), self.fan_in, self.fan_out)
-      
+
+        self.filters_optimizer = deepcopy(optimizer)
+        self.biases_optimizer = deepcopy(optimizer)
+    
     def iterate_regions(self, input_data, x_len, y_len):
         for x, y in itertools.product(range(x_len), range(y_len)):
-            yield input_data[x:x+self.k_x, y:y+self.k_y, :, :], x, y 
+            yield input_data[x:x+self.k_x, y:y+self.k_y, :, :], x, y
 
     def forward_propagation(self, input_data):
         self.input = input_data
@@ -169,24 +172,29 @@ class Conv2D(Layer):
             self.output[:, :, i, :] += self.biases[i]
         return self.output
 
-    def backward_propagation(self, output_error, default_lr): 
+    def backward_propagation(self, output_error, default_lr):
+        if self.filters_optimizer.learning_rate == None:
+            self.filters_optimizer.learning_rate = default_lr
+            self.biases_optimizer.learning_rate = default_lr
+
         input_error = np.zeros(self.input.shape)
         df_dout = np.zeros(self.filters.shape)
         db_dout = np.zeros(self.biases.shape)
+        batch_size = self.input.shape[3]
 
         for i in range(self.number_filters):
             for imgs_region, x, y in self.iterate_regions(self.input, *self.img_out_size):
                 region_error = output_error[x, y, i, :].reshape(1,1,1,-1)
                 filter = self.filters[:,:,i].reshape(self.k_x, self.k_y, 1, 1)
-                input_error[x:x+self.k_x, y:y+self.k_y, :, :] += filter*region_error
-                df_dout[:, :, i] += np.sum(imgs_region*region_error, axis=(2,3))
-            db_dout[i] = np.sum(output_error[:,:,i,:])
+                input_error[x:x+self.k_x, y:y+self.k_y, :, :] += filter*region_error / batch_size
+                df_dout[:, :, i] += np.sum(imgs_region*region_error, axis=(2,3)) / batch_size
+            db_dout[i] = np.sum(output_error[:,:,i,:]) / batch_size
 
-        batch_size = self.input.shape[3]
-        self.filters -= default_lr * df_dout / batch_size
-        self.biases -= default_lr * db_dout / batch_size
+        self.filters = self.filters_optimizer.update(self.filters, df_dout) 
+        self.biases = self.biases_optimizer.update(self.biases, db_dout) 
 
         return input_error
+
     
 class Flatten(Layer):
     """ 
@@ -282,17 +290,20 @@ class Dropout(Layer):
 class BatchNormalization:
     """ Batch normalization layer. """
 
-    def __init__(self, epsilon=1e-5, momentum=0.99, clip_value=1):
+    def __init__(self, epsilon=1e-5, momentum=0.99, clip_value=1, optimizer=SGD()):
         """ Initialize the layer with the given epsilon and momentum. 
         
         Args:
-            epsilon (float): Epsilon value.
-            momentum (float): Momentum value.
-            clip_value (float): Value to clip gradients.
+            epsilon (float): Epsilon value. Default is 1e-5.
+            momentum (float): Momentum value. Default is 0.99.
+            clip_value (float): Value to clip gradients. Default is 1.
+            optimizer (Optimizer): Optimizer (Instance of Optimizer) to use. Default is SGD.
         """
         self.epsilon = epsilon
         self.momentum = momentum
         self.clip_value = clip_value
+        self.gamma_optimizer = deepcopy(optimizer)
+        self.beta_optimizer = deepcopy(optimizer)
         self.running_mean = None
         self.running_var = None
         self.gamma = None
@@ -335,12 +346,15 @@ class BatchNormalization:
         grad_gamma = np.sum(output_error * normalized_input, axis=-1, keepdims=True) / batch_size
         grad_beta = np.sum(output_error, axis=-1, keepdims=True) / batch_size
 
-        # Clip gradients for gamma and beta
         grad_gamma = clip_gradients(grad_gamma, self.clip_value)
         grad_beta = clip_gradients(grad_beta, self.clip_value)
 
-        self.gamma -= default_lr * grad_gamma
-        self.beta -= default_lr * grad_beta
+        if self.gamma_optimizer.learning_rate is None:
+            self.gamma_optimizer.learning_rate = default_lr
+            self.beta_optimizer.learning_rate = default_lr
+
+        self.gamma = self.gamma_optimizer.update(self.gamma, grad_gamma)
+        self.beta = self.beta_optimizer.update(self.beta, grad_beta)
 
         grad_input_norm = output_error * self.gamma
 

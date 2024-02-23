@@ -1,6 +1,10 @@
 import numpy as np
 
+
 class Metrics:
+    """ 
+    Class for metrics functions.
+    """
     @staticmethod
     def get_metric_function(name):
         metrics = {

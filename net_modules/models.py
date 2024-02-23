@@ -2,6 +2,7 @@ import numpy as np
 from net_modules.layers import Dropout
 from net_modules.metrics import Metrics
 
+
 class Sequential:
     """ 
     Sequential model. This class is used to create a model by adding layers to it.

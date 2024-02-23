@@ -1,6 +1,10 @@
 import numpy as np
 
+
 class Initializer:
+    """ 
+    Class for model parameter initialization functions.
+    """
     @staticmethod
     def get_init_function(name):
         initializers = {

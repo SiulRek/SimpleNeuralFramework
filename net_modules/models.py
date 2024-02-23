@@ -75,9 +75,14 @@ class Sequential:
             metrics (list): List of metrics to be calculated. If None, only the loss is calculated.
 
         Returns:
-            None
+            history: Dictionary containing the loss and metrics values for each epoch.
         """
         n_samples = X_train.shape[-1]
+        history = {'loss': []}
+        if metrics is not None:
+            for metric in metrics:
+                history[metric] = []
+
         for epoch in range(epochs):
             indices = np.arange(n_samples)
             np.random.shuffle(indices)
@@ -104,15 +109,21 @@ class Sequential:
                 if verbose == 2:
                     print(f'Epoch {epoch+1}/{epochs}, Batch {start_idx//batch_size+1}/{n_samples//batch_size}, Error: {loss}')
             
-            if verbose > 0:
-                y_preds = self.predict(X_train)
-                metrics_text = ''
-                if metrics is not None:
-                    _, text = self._calculate_metrics(y_train, y_preds, metrics)
-                    metrics_text = ', ' + ', '.join(text)
-                print('-' * 50)
-                print(f'Epoch {epoch+1}/{epochs}, Error: {self.loss.calculate(y_train, y_preds):.4f}' + metrics_text)
+            y_preds = self.predict(X_train)
+            epoch_loss = self.loss.calculate(y_train, y_preds)
+            history['loss'].append(epoch_loss)
 
+            if metrics is not None:
+                metrics, text = self._calculate_metrics(y_train, y_preds, metrics)
+                for metric, value in metrics.items():
+                    history[metric].append(value)
+
+            if verbose > 0:
+                metrics_text = ', ' + ', '.join(text) if metrics is not None else ''
+                print('-' * 50)
+                print(f'Epoch {epoch+1}/{epochs}, Error: {epoch_loss:.4f}' + metrics_text)
+
+        return history
 
     def predict(self, X):
         """ 
